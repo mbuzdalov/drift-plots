@@ -1,10 +1,8 @@
 package ru.ifmo.drift;
 
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.*;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -36,8 +34,8 @@ public class Main {
         };
     }
 
-    private static <T> void consumeOneSeries(DefaultXYDataset target, String keyPrefix, List<List<T>> sources,
-                                             ToDoubleFunction<T> first, ToDoubleFunction<T> second) {
+    private static <T> void consumeSeries(DefaultXYDataset target, String keyPrefix, List<List<T>> sources,
+                                          ToDoubleFunction<T> first, ToDoubleFunction<T> second) {
         for (int i = 0; i < sources.size(); ++i) {
             List<T> source = sources.get(i);
             String key = keyPrefix + (i + 1);
@@ -61,11 +59,6 @@ public class Main {
             this.name = name;
             this.color = color;
         }
-    }
-
-    private static void makeLogarithmic(XYPlot plot) {
-        plot.setDomainAxis(new LogarithmicAxis(plot.getDomainAxis().getLabel()));
-        plot.setRangeAxis(new LogarithmicAxis(plot.getRangeAxis().getLabel()));
     }
 
     public static void main(String[] args0) {
@@ -118,8 +111,8 @@ public class Main {
                             for (int t = 0; t < times; ++t) {
                                 algorithm.optimize(fun, generator, termination, collector, random);
                             }
-                            consumeOneSeries(fitnessPlots, name, collector.getFitnessPlots(), v -> v.evaluation, v -> v.fitness);
-                            consumeOneSeries(driftPlots, name, collector.getDriftPlots(), v -> v.fitness, v -> v.drift);
+                            consumeSeries(fitnessPlots, name, collector.getFitnessPlots(), v -> v.evaluation, v -> v.fitness);
+                            consumeSeries(driftPlots, name, collector.getDriftPlots(), v -> v.fitness, v -> v.drift);
                         }
 
                         JFreeChart fitnessChart = ChartFactory.createXYLineChart("Fitness Plot", "Time", "Fitness", fitnessPlots);
@@ -128,7 +121,7 @@ public class Main {
                         XYPlot fitnessXYPlot = fitnessChart.getXYPlot();
                         XYPlot driftXYPlot = driftChart.getXYPlot();
 
-                        makeLogarithmic(driftXYPlot);
+                        driftXYPlot.setRangeAxis(new LogarithmicAxis(driftXYPlot.getRangeAxis().getLabel()));
 
                         XYItemRenderer fitnessRenderer = fitnessXYPlot.getRenderer();
                         XYItemRenderer driftRenderer = driftXYPlot.getRenderer();
