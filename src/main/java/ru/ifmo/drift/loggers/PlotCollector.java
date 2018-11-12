@@ -24,10 +24,6 @@ public final class PlotCollector extends OptimizationLogger<Object> {
             this.fitness = fitness;
             this.drift = drift;
         }
-
-        private DriftPlotPoint toRelative() {
-            return new DriftPlotPoint(fitness, fitness - drift);
-        }
     }
 
     private static class Stats {
@@ -43,13 +39,11 @@ public final class PlotCollector extends OptimizationLogger<Object> {
         void accept(double value) {
             ++countChildren;
             if (value < fitness) {
-                sumImprovements += value;
-            } else {
-                sumImprovements += fitness;
+                sumImprovements += fitness - value;
             }
         }
 
-        DriftPlotPoint makeAbsolutePoint() {
+        DriftPlotPoint makePoint() {
             return new DriftPlotPoint(fitness, sumImprovements / countChildren);
         }
     }
@@ -59,16 +53,11 @@ public final class PlotCollector extends OptimizationLogger<Object> {
     private List<FitnessPlotPoint> lastFitnessPlot = null;
 
     private final Map<Tag, Stats> currentStats = new IdentityHashMap<>();
-    private final List<List<DriftPlotPoint>> absDriftPoints = new ArrayList<>();
-    private final List<List<DriftPlotPoint>> relDriftPoints = new ArrayList<>();
+    private final List<List<DriftPlotPoint>> driftPoints = new ArrayList<>();
     private final List<List<FitnessPlotPoint>> fitnessPlots = new ArrayList<>();
 
-    public List<List<DriftPlotPoint>> getAbsoluteDriftPlots() {
-        return Collections.unmodifiableList(absDriftPoints);
-    }
-
-    public List<List<DriftPlotPoint>> getRelativeDriftPlots() {
-        return Collections.unmodifiableList(relDriftPoints);
+    public List<List<DriftPlotPoint>> getDriftPlots() {
+        return Collections.unmodifiableList(driftPoints);
     }
 
     public List<List<FitnessPlotPoint>> getFitnessPlots() {
@@ -85,15 +74,13 @@ public final class PlotCollector extends OptimizationLogger<Object> {
 
     @Override
     public void logProcessFinished() {
-        List<DriftPlotPoint> absResult = currentStats.values().stream()
+        List<DriftPlotPoint> driftResult = currentStats.values().stream()
                 .filter(s -> s.countChildren > 0 && s.sumImprovements > 0)
-                .map(Stats::makeAbsolutePoint)
+                .map(Stats::makePoint)
                 .sorted(Comparator.comparingDouble(o -> o.fitness))
                 .collect(Collectors.toList());
-        List<DriftPlotPoint> relResult = absResult.stream().map(DriftPlotPoint::toRelative).collect(Collectors.toList());
         currentStats.clear();
-        absDriftPoints.add(Collections.unmodifiableList(absResult));
-        relDriftPoints.add(Collections.unmodifiableList(relResult));
+        driftPoints.add(Collections.unmodifiableList(driftResult));
         fitnessPlots.add(Collections.unmodifiableList(lastFitnessPlot));
         lastFitnessPlot = null;
     }

@@ -16,4 +16,9 @@ public final class OneMax implements ToDoubleFunction<BitArray> {
         }
         return result;
     }
+
+    @Override
+    public String toString() {
+        return "OneMax";
+    }
 }

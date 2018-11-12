@@ -1,6 +1,7 @@
 package ru.ifmo.drift;
 
 import java.awt.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
@@ -19,6 +20,7 @@ import org.jfree.chart.renderer.xy.XYItemRenderer;
 import org.jfree.data.xy.DefaultXYDataset;
 import ru.ifmo.drift.algorithms.OnePlusOneEA;
 import ru.ifmo.drift.functions.OneMax;
+import ru.ifmo.drift.functions.TwoWay;
 import ru.ifmo.drift.loggers.PlotCollector;
 import ru.ifmo.drift.util.BitArray;
 import ru.ifmo.drift.util.CommandLineArgs;
@@ -61,6 +63,11 @@ public class Main {
         }
     }
 
+    private static void makeLogarithmic(XYPlot plot) {
+        plot.setDomainAxis(new LogarithmicAxis(plot.getDomainAxis().getLabel()));
+        plot.setRangeAxis(new LogarithmicAxis(plot.getRangeAxis().getLabel()));
+    }
+
     public static void main(String[] args0) {
         System.setProperty("awt.useSystemAAFontSettings", "on");
         System.setProperty("swing.aatext", "true");
@@ -71,7 +78,7 @@ public class Main {
         int step = Integer.parseInt(args.getOption("step", "100"));
         int times = Integer.parseInt(args.getOption("times", "25"));
 
-        ToDoubleFunction<BitArray> fun = new OneMax();
+        List<ToDoubleFunction<BitArray>> functions = Arrays.asList(new OneMax(), new TwoWay());
         BiPredicate<BitArray, Double> termination = (ind, fitness) -> fitness == 0;
 
         List<AlgorithmWithNameAndColor> config = Arrays.asList(
@@ -86,58 +93,61 @@ public class Main {
             frame.add(tabbedPane);
             frame.setVisible(true);
 
+            List<JTabbedPane> functionPanes = new ArrayList<>();
+            for (ToDoubleFunction<BitArray> fun : functions) {
+                JTabbedPane innerPane = new JTabbedPane();
+                tabbedPane.add(fun.toString(), innerPane);
+                functionPanes.add(innerPane);
+            }
+
             new Thread(() -> {
                 Random random = ThreadLocalRandom.current();
 
-                for (int n = from; n <= to; n += step) {
-                    DefaultXYDataset fitnessPlots = new DefaultXYDataset();
-                    DefaultXYDataset absDriftPlots = new DefaultXYDataset();
-                    DefaultXYDataset relDriftPlots = new DefaultXYDataset();
-                    Function<Random, BitArray> generator = getRandomGenerator(n);
+                for (int funIdx = 0; funIdx < functions.size(); ++funIdx) {
+                    JTabbedPane innerTabbedPane = functionPanes.get(funIdx);
+                    ToDoubleFunction<BitArray> fun = functions.get(funIdx);
+                    for (int n = from; n <= to; n += step) {
+                        DefaultXYDataset fitnessPlots = new DefaultXYDataset();
+                        DefaultXYDataset driftPlots = new DefaultXYDataset();
+                        Function<Random, BitArray> generator = getRandomGenerator(n);
 
-                    for (AlgorithmWithNameAndColor instance : config) {
-                        Algorithm<BitArray> algorithm = instance.algorithm;
-                        String name = instance.name + ",#";
-                        PlotCollector collector = new PlotCollector();
-                        for (int t = 0; t < times; ++t) {
-                            algorithm.optimize(fun, generator, termination, collector, random);
+                        for (AlgorithmWithNameAndColor instance : config) {
+                            Algorithm<BitArray> algorithm = instance.algorithm;
+                            String name = instance.name + ",#";
+                            PlotCollector collector = new PlotCollector();
+                            for (int t = 0; t < times; ++t) {
+                                algorithm.optimize(fun, generator, termination, collector, random);
+                            }
+                            consumeOneSeries(fitnessPlots, name, collector.getFitnessPlots(), v -> v.evaluation, v -> v.fitness);
+                            consumeOneSeries(driftPlots, name, collector.getDriftPlots(), v -> v.fitness, v -> v.drift);
                         }
-                        consumeOneSeries(fitnessPlots, name, collector.getFitnessPlots(), v -> v.evaluation, v -> v.fitness);
-                        consumeOneSeries(absDriftPlots, name, collector.getAbsoluteDriftPlots(), v -> v.fitness, v -> v.drift);
-                        consumeOneSeries(relDriftPlots, name, collector.getRelativeDriftPlots(), v -> v.fitness, v -> v.drift);
-                    }
 
-                    JFreeChart fitnessChart = ChartFactory.createXYLineChart("Fitness Plot", "Time", "Fitness", fitnessPlots);
-                    JFreeChart absDriftChart = ChartFactory.createXYLineChart("Absolute Drift Plot", "Fitness", "Drift", absDriftPlots);
-                    JFreeChart relDriftChart = ChartFactory.createXYLineChart("Relative Drift Plot", "Fitness", "Drift", relDriftPlots);
+                        JFreeChart fitnessChart = ChartFactory.createXYLineChart("Fitness Plot", "Time", "Fitness", fitnessPlots);
+                        JFreeChart driftChart = ChartFactory.createXYLineChart("Drift Plot", "Fitness", "Drift", driftPlots);
 
-                    XYPlot fitnessXYPlot = fitnessChart.getXYPlot();
-                    XYPlot absDriftXYPlot = absDriftChart.getXYPlot();
-                    XYPlot relDriftXYPlot = relDriftChart.getXYPlot();
+                        XYPlot fitnessXYPlot = fitnessChart.getXYPlot();
+                        XYPlot driftXYPlot = driftChart.getXYPlot();
 
-                    relDriftXYPlot.setDomainAxis(new LogarithmicAxis(relDriftXYPlot.getDomainAxis().getLabel()));
-                    relDriftXYPlot.setRangeAxis(new LogarithmicAxis(relDriftXYPlot.getRangeAxis().getLabel()));
+                        makeLogarithmic(driftXYPlot);
 
-                    XYItemRenderer fitnessRenderer = fitnessXYPlot.getRenderer();
-                    XYItemRenderer absDriftRenderer = absDriftXYPlot.getRenderer();
-                    XYItemRenderer relDriftRenderer = relDriftXYPlot.getRenderer();
-                    for (int cfg = 0, j = 0; cfg < config.size(); ++cfg) {
-                        Color color = config.get(cfg).color;
-                        for (int t = 0; t < times; ++t, ++j) {
-                            fitnessRenderer.setSeriesPaint(j, color);
-                            absDriftRenderer.setSeriesPaint(j, color);
-                            relDriftRenderer.setSeriesPaint(j, color);
+                        XYItemRenderer fitnessRenderer = fitnessXYPlot.getRenderer();
+                        XYItemRenderer driftRenderer = driftXYPlot.getRenderer();
+                        for (int cfg = 0, j = 0; cfg < config.size(); ++cfg) {
+                            Color color = config.get(cfg).color;
+                            for (int t = 0; t < times; ++t, ++j) {
+                                fitnessRenderer.setSeriesPaint(j, color);
+                                driftRenderer.setSeriesPaint(j, color);
+                            }
                         }
-                    }
 
-                    final int N = n;
-                    SwingUtilities.invokeLater(() -> {
-                        JPanel thePanel = new JPanel(new GridLayout(1, 3));
-                        thePanel.add(new ChartPanel(fitnessChart));
-                        thePanel.add(new ChartPanel(absDriftChart));
-                        thePanel.add(new ChartPanel(relDriftChart));
-                        tabbedPane.add("N = " + N, thePanel);
-                    });
+                        final int N = n;
+                        SwingUtilities.invokeLater(() -> {
+                            JPanel thePanel = new JPanel(new GridLayout(1, 2));
+                            thePanel.add(new ChartPanel(fitnessChart));
+                            thePanel.add(new ChartPanel(driftChart));
+                            innerTabbedPane.add("N = " + N, thePanel);
+                        });
+                    }
                 }
             }).start();
         });
